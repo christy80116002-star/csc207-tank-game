@@ -54,6 +54,8 @@ public class AppBuilder {
 
     private MainMenuView mainMenuView;
     private GameView gameView;
+    private LoginViewModel loginViewModel;
+    private LoginView loginView;
     private LeaderboardViewModel leaderboardViewModel;
     private LeaderboardView leaderboardView;
 
@@ -74,19 +76,24 @@ public class AppBuilder {
         return this;
     }
 
-    private void wireLogin() {
+    public AppBuilder addLoginView() {
+        loginViewModel = new LoginViewModel();
+        loginView = new LoginView(loginViewModel, () -> switchTo(MainMenuView.VIEW_NAME));
+        cardPanel.add(loginView, loginViewModel.getViewName());
+        return this;
+    }
+
+    public AppBuilder addLoginUseCase() {
         Path accountsFile = Path.of(System.getProperty("user.home"),
                 ".ricochet-tanks", "accounts.properties");
-        LoginViewModel loginModel = new LoginViewModel();
         LoginInteractor loginInteractor = new LoginInteractor(
                 new FileUserDataAccessObject(accountsFile), currentPlayers,
-                new LoginPresenter(loginModel));
-        LoginView loginView = new LoginView(new LoginController(loginInteractor),
-                loginModel, () -> switchTo(MainMenuView.VIEW_NAME));
-        cardPanel.add(loginView, loginModel.getViewName());
-        mainMenuView.setLoginAction(() -> switchTo(loginModel.getViewName()));
-        loginModel.addPropertyChangeListener(event -> mainMenuView.showPlayers(
-                loginModel.getState().getPlayer1Name(), loginModel.getState().getPlayer2Name()));
+                new LoginPresenter(loginViewModel));
+        loginView.setController(new LoginController(loginInteractor));
+        mainMenuView.setLoginAction(() -> switchTo(loginViewModel.getViewName()));
+        loginViewModel.addPropertyChangeListener(event -> mainMenuView.showPlayers(
+                loginViewModel.getState().getPlayer1Name(), loginViewModel.getState().getPlayer2Name()));
+        return this;
     }
 
     public AppBuilder addLeaderboardView() {
@@ -117,7 +124,6 @@ public class AppBuilder {
     //  and call EndRoundController.execute(winner) when the round ends.
 
     public JFrame build() {
-        wireLogin();
         // Placeholder navigation until the Start Match use case (UC2) exists.
         mainMenuView.setStartAction(() -> {
             switchTo(GameView.VIEW_NAME);

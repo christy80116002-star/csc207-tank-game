@@ -3,50 +3,105 @@ package use_case.login;
 import data_access.FileUserDataAccessObject;
 import data_access.InMemoryCurrentPlayerDataAccessObject;
 import entity.Player;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LoginPersistenceTest {
     @TempDir
     Path directory;
 
-    @Test
-    void savedAccountCanBeUsedAfterRestartWithoutChangingOtherSide() throws Exception {
-        Path file = directory.resolve("accounts.properties");
-        RecordingPresenter presenter = new RecordingPresenter();
-        InMemoryCurrentPlayerDataAccessObject originalPlayers =
-                new InMemoryCurrentPlayerDataAccessObject();
-        LoginInteractor firstRun = new LoginInteractor(
-                new FileUserDataAccessObject(file), originalPlayers, presenter);
+    private Path accountsFile;
+    private InMemoryCurrentPlayerDataAccessObject players;
+    private RecordingPresenter presenter;
+    private LoginInteractor interactor;
 
-        firstRun.signUp(input("correct-password", 1));
-        assertEquals("alice", originalPlayers.findBySide(1).orElseThrow().getUsername());
-        assertFalse(Files.readString(file).contains("correct-password"));
+    @BeforeEach
+    void setUp() {
+        accountsFile = directory.resolve("accounts.properties");
+        players = new InMemoryCurrentPlayerDataAccessObject();
+        presenter = new RecordingPresenter();
+        interactor = new LoginInteractor(new FileUserDataAccessObject(accountsFile), players, presenter);
+    }
+
+    @Test
+    void savedAccountCanBeUsedAfterRestart() throws Exception {
+        interactor.signUp(input("correct-password", 1));
+        assertEquals("alice", players.findBySide(1).orElseThrow().getUsername());
+        assertFalse(Files.readString(accountsFile).contains("correct-password"));
 
         InMemoryCurrentPlayerDataAccessObject restartedPlayers =
                 new InMemoryCurrentPlayerDataAccessObject();
-        LoginInteractor secondRun = new LoginInteractor(
-                new FileUserDataAccessObject(file), restartedPlayers, presenter);
-        secondRun.continueAsGuest(1);
-        Player guest = restartedPlayers.findBySide(1).orElseThrow();
-        secondRun.execute(input("correct-password", 2));
+        LoginInteractor restarted = new LoginInteractor(
+                new FileUserDataAccessObject(accountsFile), restartedPlayers, presenter);
+
+        restarted.execute(input("correct-password", 2));
+
         Player alice = restartedPlayers.findBySide(2).orElseThrow();
         assertEquals("alice", alice.getUsername());
         assertFalse(alice.isGuest());
-        assertSame(guest, restartedPlayers.findBySide(1).orElseThrow());
+        assertTrue(restartedPlayers.findBySide(1).isEmpty());
+    }
 
-        secondRun.execute(input("wrong-password", 2));
+    @Test
+    void wrongPasswordLeavesCurrentPlayerIntact() {
+        interactor.signUp(input("correct-password", 2));
+        Player existing = players.findBySide(2).orElseThrow();
+
+        interactor.execute(input("wrong-password", 2));
+
         assertEquals("Incorrect username or password.", presenter.message);
-        assertSame(alice, restartedPlayers.findBySide(2).orElseThrow());
+        assertSame(existing, players.findBySide(2).orElseThrow());
+    }
 
-        secondRun.signUp(input("another-password", 1));
+    @ParameterizedTest
+    @CsvSource({"' ',password", "alice,''"})
+    void emptyCredentialsAreRejected(String username, String password) {
+        LoginInputData input = new LoginInputData(username, password.toCharArray(), 1);
+        interactor.execute(input);
+        assertEquals("Enter a username and password.", presenter.message);
+
+        interactor.signUp(input);
+        assertEquals("Enter a username and password.", presenter.message);
+        assertTrue(players.findBySide(1).isEmpty());
+        assertFalse(Files.exists(accountsFile));
+    }
+
+    @Test
+    void guestSelectionOnlyChangesTheRequestedSide() {
+        interactor.signUp(input("correct-password", 1));
+        Player existing = players.findBySide(1).orElseThrow();
+
+        interactor.continueAsGuest(2);
+
+        Player guest = players.findBySide(2).orElseThrow();
+        assertTrue(guest.isGuest());
+        assertEquals("Guest 2", guest.getUsername());
+        assertSame(existing, players.findBySide(1).orElseThrow());
+        assertNull(presenter.message);
+    }
+
+    @Test
+    void duplicateSignupLeavesCurrentPlayerIntact() {
+        interactor.signUp(input("correct-password", 1));
+        interactor.continueAsGuest(2);
+        Player guest = players.findBySide(2).orElseThrow();
+
+        interactor.signUp(input("another-password", 2));
+
         assertEquals("That username is already taken.", presenter.message);
-        assertSame(guest, restartedPlayers.findBySide(1).orElseThrow());
+        assertSame(guest, players.findBySide(2).orElseThrow());
     }
 
     private LoginInputData input(String password, int side) {

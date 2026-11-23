@@ -21,7 +21,7 @@ import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 
 public final class LoginView extends JPanel {
-    private final LoginController controller;
+    private LoginController controller;
     private final JComboBox<String> side = new JComboBox<>(new String[] {"Player 1", "Player 2"});
     private final JTextField username = new JTextField(18);
     private final JPasswordField password = new JPasswordField(18);
@@ -32,9 +32,8 @@ public final class LoginView extends JPanel {
     private final JLabel status = new JLabel(" ", SwingConstants.CENTER);
     private final JLabel players = new JLabel(" ", SwingConstants.CENTER);
 
-    public LoginView(LoginController controller, LoginViewModel model, Runnable returnToMenu) {
+    public LoginView(LoginViewModel model, Runnable returnToMenu) {
         super(new BorderLayout(0, 20));
-        this.controller = controller;
         setBorder(BorderFactory.createEmptyBorder(36, 20, 36, 20));
 
         add(players, BorderLayout.NORTH);
@@ -68,6 +67,10 @@ public final class LoginView extends JPanel {
         });
         model.addPropertyChangeListener(event -> render(model.getState()));
         render(model.getState());
+    }
+
+    public void setController(LoginController controller) {
+        this.controller = controller;
     }
 
     private JPanel row(String labelText, javax.swing.JComponent field) {
